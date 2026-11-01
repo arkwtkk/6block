@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f6b4f">
+<meta name="description" content="現状からゴールまでを6つのブロックで描き、数字で利益のボトルネックを見つけるツール">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="6ブロック">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>6ブロックウィザード</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=IBM+Plex+Mono:wght@500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: 左に対話ステップ（1問ずつ）、右に常時更新される縦型6ブロック図。道路標識の緑＝流れ、工事の黄黒＝ボトルネック */
+:root{
+  --bg:#eef1ef; --surface:#ffffff; --sunk:#f5f7f6; --ink:#18252a; --muted:#56666a; --line:#d3dbd8; --track:#e2e8e5;
+  --accent:#0f6b4f; --accent-ink:#ffffff; --accent-soft:#e0eee8;
+  --hazard:#e8a600; --hazard-soft:#fdf3d6; --stripe:#1b2326; --danger:#b3261e;
+  --f-display:'Dela Gothic One','Zen Kaku Gothic New','Hiragino Sans',sans-serif;
+  --f-body:'Zen Kaku Gothic New','Hiragino Sans','Hiragino Kaku Gothic ProN','Yu Gothic','Meiryo',system-ui,sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1513; --surface:#18201e; --sunk:#141b19; --ink:#e3ebe7; --muted:#9aa9a4; --line:#2c3734; --track:#25312e;
+  --accent:#45b58e; --accent-ink:#0a1310; --accent-soft:#17302a;
+  --hazard:#f2b52e; --hazard-soft:#3a3013; --stripe:#141414; --danger:#ff8a80; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f1513; --surface:#18201e; --sunk:#141b19; --ink:#e3ebe7; --muted:#9aa9a4; --line:#2c3734; --track:#25312e;
+  --accent:#45b58e; --accent-ink:#0a1310; --accent-soft:#17302a;
+  --hazard:#f2b52e; --hazard-soft:#3a3013; --stripe:#141414; --danger:#ff8a80; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.app{max-width:1180px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:20px}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px}
+.brand h1{font-family:var(--f-display);font-weight:400;font-size:clamp(24px,3.4vw,32px);line-height:1.2;margin:0;letter-spacing:.02em;text-wrap:balance}
+.brand p{margin:4px 0 0;color:var(--muted);max-width:60ch}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:8px;font-weight:500;font-size:14px;line-height:1.4}
+.btn:hover{border-color:var(--accent)}
+.btn.armed{border-color:var(--danger);color:var(--danger)}
+.btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn-primary:hover{filter:brightness(1.08)}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed;filter:none}
+
+.banner{display:flex;gap:10px;align-items:flex-start;background:var(--hazard-soft);border:1px solid var(--hazard);border-radius:8px;padding:10px 14px;font-size:14px}
+.banner b{white-space:nowrap}
+
+/* stepper */
+.stepper-wrap{overflow-x:auto;margin:0 -4px;padding:0 4px}
+.stepper{display:flex;gap:6px;list-style:none;margin:0;padding:0;min-width:max-content}
+.stepper button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px 6px 6px;font-size:13px;font-weight:500;white-space:nowrap}
+.stepper .n{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--track);font-family:var(--f-mono);font-size:12px;font-weight:600}
+.stepper button.done .n{background:var(--accent-soft);color:var(--accent)}
+.stepper button.current{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.stepper button.current .n{background:var(--accent);color:var(--accent-ink)}
+.stepper button:disabled{opacity:.45;cursor:not-allowed}
+
+/* main */
+.main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,440px);gap:20px;align-items:start}
+@media (max-width:920px){.main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:24px;min-width:0}
+@media (max-width:520px){.panel{padding:18px}}
+.kicker{font-family:var(--f-mono);font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--accent);text-transform:uppercase}
+.panel h2{font-size:21px;line-height:1.45;margin:4px 0 6px;font-weight:700;text-wrap:balance}
+.lead{color:var(--muted);margin:0 0 20px;max-width:62ch}
+.fields{display:grid;gap:16px}
+.field{display:grid;gap:6px;min-width:0}
+.field label,.label{font-weight:700;font-size:14px}
+.field .sub{font-weight:400;color:var(--muted);font-size:13px}
+input[type=text],textarea{width:100%;font:inherit;color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:10px 12px;line-height:1.5}
+textarea{min-height:76px;resize:vertical}
+input[type=text]:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.msg{font-size:13px;margin:0;color:var(--muted)}
+.msg.warn{color:var(--danger)}
+.note{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:14px}
+.note b{color:var(--accent)}
+
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.choice{text-align:left;border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:10px 12px;display:grid;gap:2px}
+.choice strong{font-size:14px}
+.choice span{font-size:12px;color:var(--muted);line-height:1.5}
+.choice[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+
+.steprow{display:grid;grid-template-columns:64px minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center}
+.steprow .tag,.kpirow .tag{font-family:var(--f-mono);font-size:12px;font-weight:600;color:var(--muted)}
+@media (max-width:560px){.steprow{grid-template-columns:minmax(0,1fr)}.steprow .tag{margin-top:6px}}
+
+.kpirow{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:end;padding:12px 0;border-top:1px solid var(--line)}
+.kpirow:first-of-type{border-top:0}
+.kpirow .name{font-weight:700;font-size:14px;line-height:1.4}
+.kpirow .hint{font-size:12px;color:var(--muted);line-height:1.5}
+.kpirow .mini{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+.inwrap{display:flex;align-items:center;gap:6px}
+.inwrap input{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
+.inwrap .u{font-size:13px;color:var(--muted);min-width:1.5em}
+.live{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}
+@media (max-width:560px){.kpirow{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.kpirow .meta{grid-column:1/-1}}
+
+.checks{display:grid;gap:6px}
+.check{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--sunk);cursor:pointer;font-size:14px}
+.check input{margin-top:5px;accent-color:var(--accent)}
+.check:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+
+.nav{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:24px;padding-top:16px;border-top:1px solid var(--line);flex-wrap:wrap}
+.nav .msg{flex:1 1 200px}
+
+/* verdict */
+.verdict{border:2px solid var(--hazard);border-radius:var(--r);overflow:hidden;background:var(--hazard-soft)}
+.verdict .stripe{height:10px;background:repeating-linear-gradient(-45deg,var(--hazard) 0 10px,var(--stripe) 10px 20px)}
+.verdict .vbody{padding:16px 18px;display:grid;gap:8px}
+.verdict .vhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px}
+.verdict .vname{font-size:20px;font-weight:700}
+.verdict .vrate{font-family:var(--f-display);font-size:40px;line-height:1;letter-spacing:.01em}
+.verdict .vrate small{font-family:var(--f-body);font-size:13px;font-weight:500;margin-left:6px;color:var(--muted);letter-spacing:0}
+.verdict p{margin:0;max-width:64ch}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:420px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-weight:700;background:var(--sunk);font-size:12px;color:var(--muted)}
+td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+tr.is-bn td{background:var(--hazard-soft);font-weight:700}
+.h3{font-size:15px;font-weight:700;margin:22px 0 8px}
+.warnlist{margin:0;padding-left:1.2em;color:var(--danger);font-size:13px}
+
+.sugs{display:flex;flex-wrap:wrap;gap:6px}
+.sug{border:1px dashed var(--accent);background:transparent;color:var(--ink);border-radius:999px;padding:5px 12px;font-size:13px;text-align:left;line-height:1.5}
+.sug:hover{background:var(--accent-soft)}
+.sheet{font-family:var(--f-body);font-size:13px;line-height:1.75;min-height:260px;background:var(--sunk);white-space:pre}
+.copyrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* diagram */
+.diagram{position:sticky;top:16px}
+@media (max-width:920px){.diagram{position:static}}
+.dhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.dhead h3{margin:0;font-size:15px;font-weight:700}
+.dhead .biz{font-size:13px;color:var(--muted)}
+.flow{display:grid}
+.node{display:grid;grid-template-columns:36px minmax(0,1fr);gap:10px;align-items:start;border:1px solid var(--line);border-radius:8px;padding:10px 12px 10px 10px;background:var(--sunk);position:relative}
+.node .idx{display:grid;place-items:center;width:30px;height:30px;border-radius:6px;background:var(--track);font-family:var(--f-mono);font-weight:600;font-size:13px}
+.node .kick{font-family:var(--f-mono);font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--muted)}
+.node .ttl{font-weight:700;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.node .ph{color:var(--muted);font-weight:400}
+.node--end{background:var(--accent-soft);border-color:var(--accent)}
+.node--end .idx,.node--start .idx{background:var(--accent);color:var(--accent-ink)}
+.node .val{display:flex;align-items:baseline;gap:4px;margin-top:2px}
+.node .val b{font-family:var(--f-mono);font-size:17px;font-variant-numeric:tabular-nums}
+.node .val span{font-size:12px;color:var(--muted)}
+.bar{height:8px;border-radius:4px;background:var(--track);margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:4px;min-width:3px;transition:width .35s ease}
+.node.is-bn{border:2px solid var(--hazard);background:var(--hazard-soft);padding-left:20px}
+.node.is-bn::before{content:"";position:absolute;left:0;top:0;bottom:0;width:10px;border-radius:6px 0 0 6px;background:repeating-linear-gradient(-45deg,var(--hazard) 0 6px,var(--stripe) 6px 12px)}
+.node.is-bn .bar i{background:var(--hazard)}
+.link{margin-left:24px;border-left:2px solid var(--line);padding:5px 0 5px 16px;min-height:18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.link .rate{font-family:var(--f-mono);font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.link .lbl{font-size:11px;color:var(--muted)}
+.link.is-bn{border-left:2px dashed var(--hazard)}
+.link.is-bn .rate{background:var(--hazard);border-color:var(--hazard);color:var(--stripe)}
+.bn-tag{font-size:11px;font-weight:700;color:var(--stripe);background:var(--hazard);padding:1px 8px;border-radius:4px}
+.scope{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.scope .label{font-size:13px}
+.scope p{margin:2px 0 8px;font-size:12px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);text-decoration:line-through;text-decoration-color:var(--danger)}
+.foot{font-size:12px;color:var(--muted);text-align:center}
+
+/* AI proposals */
+.ai{border:1px solid var(--accent);border-radius:var(--r);padding:16px;display:grid;gap:12px;background:var(--surface)}
+.ai-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ai-head .label{font-size:15px}
+
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>6ブロックウィザード</h1>
+      <p>現状からゴールまでを6つのブロックで描き、数字で利益の詰まり（ボトルネック）を見つけます。</p>
+    </div>
+    <div class="top-actions">
+      <button class="btn" id="btnSample" type="button">サンプルを表示</button>
+      <button class="btn" id="btnReset" type="button">白紙から始める</button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" hidden>
+    <b>サンプル表示中</b>
+    <span>単月赤字200万円のエステサロン事例（書籍事例をもとにした例）です。入力を書き換えると、そのまま自社の診断になります。</span>
+  </div>
+
+  <nav class="stepper-wrap" aria-label="進行状況"><ol class="stepper" id="stepper"></ol></nav>
+
+  <div class="main">
+    <section class="panel" id="panel" aria-live="polite"></section>
+    <aside class="panel diagram" aria-label="6ブロックダイアグラム">
+      <div class="dhead"><h3>6ブロックダイアグラム</h3><span class="biz" id="dBiz"></span></div>
+      <div class="flow" id="flow"></div>
+      <div class="scope" id="scope"></div>
+    </aside>
+  </div>
+
+  <p class="foot">入力内容はこのブラウザの中だけに保存されます。</p>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const STEPS = ['ゴール','現状','4ステップ','スコープ','数値入力','診断','アクション'];
+
+const TEMPLATES = {
+  store:{
+    label:'店舗・サービス型', desc:'認知 → 新規集客 → リピート → 固定客化', unit:'人',
+    steps:[
+      {name:'認知',hint:'LINE登録数・チラシ配布数など'},
+      {name:'新規集客',hint:'初回来店人数'},
+      {name:'数回のリピート',hint:'2〜3回目の再来店人数'},
+      {name:'固定客化',hint:'5回以上通う常連客数'}
+    ],
+    scope:['SNSのバズ狙い投稿・動画制作の外注','新規客向けの大幅割引・クーポン','効果を測っていない広告出稿','ボトルネックと関係のない新メニュー開発','付き合いだけの交流会・イベント参加'],
+    insight:{
+      1:'認知は取れているのに来店に結びついていません。広告や投稿を増やす前に、知った人が予約・来店するまでの導線（予約方法、メニューと価格の見せ方、初回の不安の解消）を見直してください。',
+      2:'新規客は来ているのに、2回目以降につながっていません。新規集客を増やしても、この穴から流れ出るだけです。新規客の獲得には既存客の維持の約5倍のコストがかかるとされます。まずリピートに資源を集中してください。',
+      3:'リピートまでは来ているのに、常連として定着しきれていません。数回通った人が「通い続ける理由」を用意することが利益に直結します。'
+    },
+    advice:{
+      1:['LINE登録者に初回来店の案内を1通だけ送り、反応を測る','予約ボタンとメニュー・価格を1画面で見られるようにする','初回の流れ（所要時間・施術内容）を写真付きで事前に伝える'],
+      2:['初回来店客全員に、48時間以内にお礼と次回予約の案内を送る','初回の会計時に次回予約をその場で取る','「3ヶ月以内に5回」を基準にした回数券・継続プランを作る','初回客にアンケートを取り、2回目に来ない理由を把握する'],
+      3:['5回目の来店時に担当者からの手紙や特典を用意する','来店周期を記録し、周期が空いた客に個別に連絡する','常連客向けの紹介制度を作る']
+    }
+  },
+  btob:{
+    label:'BtoB・受注型', desc:'ターゲット選定 → 営業 → 商談 → 受注', unit:'件',
+    steps:[
+      {name:'ターゲット選定',hint:'リストアップした見込み先の数'},
+      {name:'営業・アプローチ',hint:'接触できた件数'},
+      {name:'商談・プレゼン',hint:'商談に進んだ件数'},
+      {name:'受注・納品',hint:'受注件数'}
+    ],
+    scope:['成果を測っていない展示会出展','リストを絞らない一斉テレアポ・DM','受注につながらない無料相談の乱発','ボトルネックと関係のない新サービス開発','付き合いだけの交流会・イベント参加'],
+    insight:{
+      1:'見込み先は選べているのに、接触できていません。リストの量を増やす前に、接触の方法とタイミングを見直してください。',
+      2:'接触はできているのに、商談に進んでいません。相手の課題を聞き出す最初の会話を型にすることが先です。',
+      3:'商談はできているのに、受注に至っていません。新しい見込み先を探す前に、提案内容とクロージングを見直してください。'
+    },
+    advice:{
+      1:['ターゲットを受注実績の多い業種・規模に絞り直す','接触チャネル（紹介・DM・電話）ごとの接触率を記録する','初回連絡の文面・トークを1本に統一して改善する'],
+      2:['初回面談用の課題ヒアリングシートを作る','導入事例を1枚にまとめ、初回接触で渡す','商談に進まなかった理由を毎回記録する'],
+      3:['提案書を「相手の課題 → 解決策 → 効果」の順に型化する','意思決定者が初回から同席するよう段取りする','見積提出後のフォロー期限を決めて守る']
+    }
+  },
+  custom:{
+    label:'自社で設定', desc:'名前は自由。ただし4つに絞る', unit:'',
+    steps:null,
+    scope:['成果を測っていないSNS投稿・広告','新規向けの値下げ・割引','ボトルネックと関係のない新商品・新サービス開発','付き合いだけの交流会・イベント参加'],
+    insight:{},
+    advice:{1:null,2:null,3:null}
+  }
+};
+const GENERIC_INSIGHT = 'ここが流れを絞っている一車線の区間です。他の区間をいくら広げても、全体の成果はこの区間の通過量で決まります。';
+const GENERIC_ADVICE = ['この区間で離れた顧客・案件の理由を10件聞き取る','この区間の通過率を週1回記録する','他の区間に使っている時間と予算を、この区間の改善に移す'];
+
+const KEY = '6block-wizard-v1';
+
+function blankState(){
+  return {isSample:false,bizName:'',goal:'',why:'',current:'',template:'store',unit:'人',
+    steps:TEMPLATES.store.steps.map(s=>({name:s.name,hint:s.hint,value:'',target:''})),
+    scopeOut:[],scopeCustom:'',actions:['',''],step:0,
+    ctxIndustry:'',ctxPrice:'',ctxResources:'',ctxTried:''};
+}
+function sampleState(){
+  const s = blankState();
+  Object.assign(s,{isSample:true,bizName:'赤字回復を図るエステサロン（事例）',
+    ctxIndustry:'フェイシャル・痩身中心の個人エステサロン（1店舗）',ctxPrice:'1回あたり約8,000円',
+    ctxResources:'施術者2名。新たな広告費はかけられない',ctxTried:'初回半額キャンペーン、TikTok動画の外注',
+    goal:'単月で営業利益プラス1円以上（黒字化）',
+    why:'黒字化しないと運転資金が尽き、店を続けられない。まず赤字を止めることが次の投資の前提になる。',
+    current:'単月赤字200万円。新規割引とSNS外注で集客しているが、利益が残らない。',
+    scopeOut:['SNSのバズ狙い投稿・動画制作の外注','新規客向けの大幅割引・クーポン'],
+    actions:['初回来店客全員に、48時間以内にお礼と次回予約の案内を送る','「3ヶ月以内に5回」を基準にした回数券・継続プランを作る'],step:5});
+  const v=[['800',''],['200',''],['15',''],['12','']];
+  s.steps.forEach((st,i)=>{st.value=v[i][0];});
+  s.steps[0].hint='LINE登録数（認知は十分、バズ経験あり）';
+  s.steps[1].hint='初回割引での来店人数';
+  s.steps[2].hint='3〜5回継続来店した人数';
+  s.steps[3].hint='長期間通う常連客数';
+  return s;
+}
+
+let state;
+try{ const raw = localStorage.getItem(KEY); state = raw ? JSON.parse(raw) : null; }catch(e){ state = null; }
+if(!state || !Array.isArray(state.steps) || state.steps.length!==4) state = sampleState();
+state = Object.assign(blankState(), state);
+
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+
+/* ---------- utils ---------- */
+const $ = s => document.querySelector(s);
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function toHalf(s){return String(s??'').replace(/[０-９．]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));}
+function parseNum(s){const t=toHalf(s).replace(/[,，\s]/g,''); if(t==='') return null; const n=Number(t); return Number.isFinite(n)&&n>=0?n:null;}
+function hasNum(s){return /[0-9０-９〇一二三四五六七八九十百千万億]/.test(s);}
+function fmt(n){return n==null?'—':Number(n).toLocaleString('ja-JP',{maximumFractionDigits:1});}
+function pct(r){return r==null?'—':(r*100).toFixed(1)+'%';}
+function tpl(){return TEMPLATES[state.template]||TEMPLATES.custom;}
+
+/* ---------- analysis ---------- */
+function analyze(){
+  const vals = state.steps.map(s=>parseNum(s.value));
+  const complete = vals.every(v=>v!==null);
+  const rates=[null,null,null,null], targets=[null,null,null,null], scores=[null,null,null,null], impact=[null,null,null,null];
+  const warnings=[];
+  for(let i=1;i<4;i++){
+    const p=vals[i-1], c=vals[i];
+    if(p!=null && c!=null && p>0) rates[i]=c/p;
+    const t=parseNum(state.steps[i].target);
+    targets[i] = (t!=null && t>0) ? t/100 : null;
+  }
+  const useTarget = [1,2,3].every(i=>targets[i]!=null);
+  for(let i=1;i<4;i++){ if(rates[i]!=null) scores[i] = useTarget ? rates[i]/targets[i] : rates[i]; }
+  let bn=null;
+  if(complete){ for(let i=1;i<4;i++){ if(scores[i]!=null && (bn===null || scores[i]<scores[bn])) bn=i; } }
+  if(complete){
+    for(let i=1;i<4;i++){
+      if(rates[i]!=null && rates[i]>1) warnings.push(`STEP ${i} → STEP ${i+1} で数が増えています。同じ期間・同じ数え方の数字か確認してください。`);
+      if(vals[i-1]===0) warnings.push(`STEP ${i} が0のため、STEP ${i+1} への通過率を計算できません。`);
+    }
+    for(let i=1;i<4;i++){
+      if(rates[i]==null) continue;
+      let f = vals[i-1]*Math.min(rates[i]+0.10,1), ok=true;
+      for(let j=i+1;j<4;j++){ if(rates[j]==null){ok=false;break;} f*=rates[j]; }
+      impact[i] = ok ? f : null;
+    }
+  }
+  return {vals,rates,targets,scores,useTarget,bn,complete,warnings,impact};
+}
+
+/* ---------- validation ---------- */
+function stepError(i){
+  switch(i){
+    case 0:
+      if(!state.goal.trim()) return 'ゴールを入力してください。';
+      if(!hasNum(state.goal)) return 'ゴールに数字が入っていません。「単月黒字化」なら「営業利益を月プラス1円以上」のように、達成したか判定できる数字にしてください。';
+      if(!state.why.trim()) return 'そのゴールが必要な理由を一言書いてください。';
+      return null;
+    case 1: return state.current.trim() ? null : '現状を入力してください。';
+    case 2: return state.steps.every(s=>s.name.trim()) ? null : '4つのステップすべてに名前を付けてください。';
+    case 4: return state.steps.every(s=>parseNum(s.value)!==null) ? null : '4つのステップすべてに数値を入れてください（0も入力できます）。';
+    default: return null;
+  }
+}
+function reachable(){ for(let i=0;i<STEPS.length;i++){ if(stepError(i)) return i; } return STEPS.length-1; }
+
+/* ---------- rendering: stepper ---------- */
+function renderStepper(){
+  const max = reachable();
+  $('#stepper').innerHTML = STEPS.map((n,i)=>{
+    const cls = i===state.step ? 'current' : (i<max || (i<=max && !stepError(i) && i!==state.step) ? 'done' : '');
+    return `<li><button type="button" data-go="${i}" class="${cls}" ${i>max?'disabled':''} ${i===state.step?'aria-current="step"':''}><span class="n">${i+1}</span>${n}</button></li>`;
+  }).join('');
+}
+
+/* ---------- rendering: diagram ---------- */
+function renderDiagram(){
+  const a = analyze();
+  const u = esc(state.unit);
+  const max = Math.max(1,...a.vals.map(v=>v||0));
+  $('#dBiz').textContent = state.bizName || '';
+  let h = `<div class="node node--start"><span class="idx">1</span><div><div class="kick">現状</div><div class="ttl">${state.current.trim()?esc(state.current):'<span class="ph">未入力</span>'}</div></div></div>`;
+  state.steps.forEach((s,i)=>{
+    if(i===0) h += `<div class="link"><span class="lbl">スタート</span></div>`;
+    else {
+      const isBn = a.bn===i;
+      h += `<div class="link ${isBn?'is-bn':''}"><span class="rate">${pct(a.rates[i])}</span><span class="lbl">通過率</span>${isBn?'<span class="bn-tag">ボトルネック</span>':''}</div>`;
+    }
+    const v = a.vals[i];
+    const w = v==null ? 0 : Math.max(0.5, v/max*100);
+    h += `<div class="node ${a.bn===i?'is-bn':''}"><span class="idx">${i+2}</span><div><div class="kick">STEP ${i+1}</div><div class="ttl">${s.name.trim()?esc(s.name):'<span class="ph">未設定</span>'}</div>`+
+         `<div class="val"><b>${fmt(v)}</b><span>${v==null?'':u}</span></div><div class="bar"><i style="width:${w}%"></i></div></div></div>`;
+  });
+  h += `<div class="link"><span class="lbl">到達</span></div>`;
+  h += `<div class="node node--end"><span class="idx">6</span><div><div class="kick">ゴール</div><div class="ttl">${state.goal.trim()?esc(state.goal):'<span class="ph">未入力</span>'}</div></div></div>`;
+  $('#flow').innerHTML = h;
+
+  const outs = [...state.scopeOut, ...state.scopeCustom.split(/\n/).map(x=>x.trim()).filter(Boolean)];
+  $('#scope').innerHTML = `<div class="label">スコープ外（停止する仕事）</div><p>この6つのブロックに入らない仕事は、無料でも流行っていてもやめます。</p>`+
+    (outs.length ? `<div class="chips">${outs.map(o=>`<span class="chip">${esc(o)}</span>`).join('')}</div>` : `<p>STEP 4で選ぶと、ここに表示されます。</p>`);
+}
+
+/* ---------- rendering: panel ---------- */
+function head(i,q,lead){ return `<div class="kicker">STEP ${i+1} / ${STEPS.length}　${STEPS[i]}</div><h2>${q}</h2><p class="lead">${lead}</p>`; }
+
+const VIEWS = [
+  ()=> head(0,'達成したいゴールは何ですか？','曖昧な「売上アップ」ではなく、達成したかどうかがはっきりわかる数字で書きます。')+
+    `<div class="fields">
+      <div class="field"><label for="bizName">事業・会社名 <span class="sub">（任意）</span></label><input type="text" id="bizName" data-bind="bizName" value="${esc(state.bizName)}" placeholder="例：○○サロン 新宿店"></div>
+      <div class="field"><label for="goal">ゴール（数値）</label><input type="text" id="goal" data-bind="goal" value="${esc(state.goal)}" placeholder="例：単月で営業利益プラス1円以上、大型案件を月1件受注"></div>
+      <div class="field"><label for="why">なぜそのゴールが必要ですか？</label><textarea id="why" data-bind="why" placeholder="例：黒字化しないと運転資金が尽きる。次の投資の前提になる。">${esc(state.why)}</textarea><p class="msg">その先の利益につながる「センターピン」かどうかを確かめるための問いです。</p></div>
+    </div>`,
+  ()=> head(1,'今のスタート地点はどこですか？','現在の状況を、できるだけ数字で書きます。ゴールとの距離がわかるようになります。')+
+    `<div class="fields">
+      <div class="field"><label for="current">現状</label><textarea id="current" data-bind="current" placeholder="例：単月赤字200万円。新規割引で集客しているが利益が残らない。">${esc(state.current)}</textarea><p class="msg" id="curWarn"></p></div>
+    </div>`,
+  ()=> head(2,'ゴールまでの4つのステップを決めましょう','最初から独自の流れを作らず、標準の流れを当てはめてから名前を調整します。枠は4つまでです。')+
+    `<div class="fields">
+      <div class="choices" role="group" aria-label="テンプレート">${Object.entries(TEMPLATES).map(([k,t])=>`<button type="button" class="choice" data-tpl="${k}" aria-pressed="${state.template===k}"><strong>${t.label}</strong><span>${t.desc}</span></button>`).join('')}</div>
+      <div class="field"><label for="unit">数える単位</label><input type="text" id="unit" data-bind="unit" value="${esc(state.unit)}" placeholder="人・件・社など" style="max-width:140px"></div>
+      <div class="field"><span class="label">ステップ名と、数える指標</span>
+      ${state.steps.map((s,i)=>`<div class="steprow"><span class="tag">STEP ${i+1}</span><input type="text" id="sn${i}" data-sf="${i}:name" value="${esc(s.name)}" placeholder="ステップ名" aria-label="STEP ${i+1} の名前"><input type="text" id="sh${i}" data-sf="${i}:hint" value="${esc(s.hint)}" placeholder="何を数えるか" aria-label="STEP ${i+1} で数えるもの"></div>`).join('')}
+      </div>
+    </div>`,
+  ()=> head(3,'6ブロックダイアグラムができました','右の図に入っていない仕事は「スコープ外」です。今やっている仕事のうち、図に入らないものを選んでください。ここで選んだ仕事は止めるか、現状維持にとどめます。')+
+    `<div class="fields">
+      <div class="checks">${tpl().scope.map((o,i)=>`<label class="check"><input type="checkbox" id="sc${i}" data-scope="${esc(o)}" ${state.scopeOut.includes(o)?'checked':''}><span>${esc(o)}</span></label>`).join('')}</div>
+      <div class="field"><label for="scopeCustom">その他のスコープ外の仕事 <span class="sub">（1行に1つ）</span></label><textarea id="scopeCustom" data-bind="scopeCustom" placeholder="例：取引先に頼まれて続けている無償の作業">${esc(state.scopeCustom)}</textarea></div>
+      <p class="note"><b>判断の目安：</b>その仕事をやめても、STEP 1〜4のどの数字も下がらないなら、スコープ外です。</p>
+    </div>`,
+  ()=> {
+    const a = analyze(), u = esc(state.unit);
+    return head(4,'各ステップの月間の数字を入れてください','同じ1か月の実績で数えます。目標通過率は任意です。認知→来店のように元々低くなりやすい区間がある場合に入れると、目標との差で判定します。')+
+    `<div>${state.steps.map((s,i)=>`<div class="kpirow">
+        <div class="meta"><div class="name">STEP ${i+1}　${esc(s.name)}</div><div class="hint">${esc(s.hint)}</div></div>
+        <div><span class="mini">実績</span><div class="inwrap"><input type="text" inputmode="decimal" id="v${i}" data-sf="${i}:value" value="${esc(s.value)}" placeholder="0" aria-label="STEP ${i+1} の実績"><span class="u">${u}</span></div><div class="live" id="live${i}">${i>0?'通過率 '+pct(a.rates[i]):'起点'}</div></div>
+        <div>${i>0?`<span class="mini">目標通過率</span><div class="inwrap"><input type="text" inputmode="decimal" id="t${i}" data-sf="${i}:target" value="${esc(s.target)}" placeholder="任意" aria-label="STEP ${i} から ${i+1} への目標通過率"><span class="u">%</span></div>`:''}</div>
+      </div>`).join('')}</div>`;
+  },
+  ()=> {
+    const a = analyze();
+    if(a.bn==null) return head(5,'ボトルネック診断','通過率を計算できる区間がありません。STEP 5の数字を確認してください。');
+    const i=a.bn, s=state.steps, u=esc(state.unit);
+    let t = `前の段階（${esc(s[i-1].name)}）まで来た${fmt(a.vals[i-1])}${u}のうち、${esc(s[i].name)}まで進んだのは${fmt(a.vals[i])}${u}（${pct(a.rates[i])}）です。`;
+    t += a.useTarget ? `目標通過率${(a.targets[i]*100).toFixed(1)}%に対する達成度は${(a.scores[i]*100).toFixed(0)}%で、3つの区間の中で最も目標から遠い区間です。` : '3つの区間の中で、最も多くの顧客がここで離れています。';
+    const insight = (tpl().insight||{})[i] || GENERIC_INSIGHT;
+    const rows = [1,2,3].map(k=>{
+      const inc = a.impact[k]!=null ? a.impact[k]-a.vals[3] : null;
+      return `<tr class="${k===i?'is-bn':''}"><td>STEP ${k} → ${k+1}${k===i?'（ボトルネック）':''}</td><td class="num">${pct(a.rates[k])}</td>${a.useTarget?`<td class="num">${a.scores[k]!=null?(a.scores[k]*100).toFixed(0)+'%':'—'}</td>`:''}<td class="num">${a.impact[k]!=null?fmt(Math.round(a.impact[k]))+u:'—'}</td><td class="num">${inc!=null?'+'+fmt(Math.round(inc))+u:'—'}</td></tr>`;
+    }).join('');
+    return head(5,'ボトルネック診断','数字から見た、あなたの事業の渋滞ポイントです。')+
+    `<div class="verdict"><div class="stripe"></div><div class="vbody">
+       <div class="kicker" style="color:inherit">ボトルネック</div>
+       <div class="vhead"><span class="vname">STEP ${i+1}　${esc(s[i].name)}</span><span class="vrate">${pct(a.rates[i])}<small>通過率</small></span></div>
+       <p>${t}</p><p><strong>${esc(insight)}</strong></p>
+     </div></div>
+     <div class="h3">どの区間を直すと、最終ステップが一番増えるか</div>
+     <p class="msg" style="margin-bottom:8px">各区間の通過率を10ポイント上げ、ほかの区間は今のままとした場合の「${esc(s[3].name)}」の数です（現在 ${fmt(a.vals[3])}${u}）。</p>
+     <div class="tblwrap"><table><thead><tr><th>区間</th><th class="num">現在の通過率</th>${a.useTarget?'<th class="num">目標達成度</th>':''}<th class="num">改善後の${esc(s[3].name)}</th><th class="num">増加</th></tr></thead><tbody>${rows}</tbody></table></div>
+     ${a.warnings.length?`<div class="h3">確認してください</div><ul class="warnlist">${a.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`:''}
+     <p class="msg" style="margin-top:14px">${a.useTarget?'判定方法：目標通過率に対する達成度が最も低い区間をボトルネックとしています。':'判定方法：通過率が最も低い区間をボトルネックとしています。区間ごとに目安が違う場合は、STEP 5で目標通過率を入れてください。'}</p>`;
+  },
+  ()=> {
+    const a = analyze();
+    const i = a.bn;
+    const sugs = (i!=null && (tpl().advice||{})[i]) || GENERIC_ADVICE;
+    const outs = [...state.scopeOut, ...state.scopeCustom.split(/\n/).map(x=>x.trim()).filter(Boolean)];
+    return head(6,'ボトルネックだけに絞った施策を決めましょう', i!=null ? `「${esc(state.steps[i].name)}」の通過率を上げる施策（センターピン）を1〜2個に絞ります。ボトルネック以外の施策は止めるか、現状維持にします。` : '施策を1〜2個に絞ります。')+
+    `<div class="fields">
+      <div class="ai" style="border-color:var(--line)">
+        <span class="label">事業の補足 <span class="sub">（入れるほど、下のプロンプトでAIの提案が具体的になります）</span></span>
+        <div class="fields">
+          <div class="field"><label for="ctxIndustry">業種・業態</label><input type="text" id="ctxIndustry" data-bind="ctxIndustry" value="${esc(state.ctxIndustry)}" placeholder="例：まつげエクステ専門サロン、1店舗"></div>
+          <div class="field"><label for="ctxPrice">客単価・案件単価</label><input type="text" id="ctxPrice" data-bind="ctxPrice" value="${esc(state.ctxPrice)}" placeholder="例：1回 約6,000円"></div>
+          <div class="field"><label for="ctxResources">使える人員・予算・時間</label><input type="text" id="ctxResources" data-bind="ctxResources" value="${esc(state.ctxResources)}" placeholder="例：スタッフ3名、月の販促費は5万円まで"></div>
+          <div class="field"><label for="ctxTried">すでに試したこと</label><textarea id="ctxTried" data-bind="ctxTried" placeholder="例：次回予約割引を出したが効果が薄かった">${esc(state.ctxTried)}</textarea></div>
+        </div>
+      </div>
+      <div class="field"><span class="label">定番の候補 <span class="sub">（押すと下の欄に入ります）</span></span><div class="sugs">${sugs.map(x=>`<button type="button" class="sug" data-sug="${esc(x)}">＋ ${esc(x)}</button>`).join('')}</div></div>
+      <div class="field"><label for="a0">センターピン施策 1</label><input type="text" id="a0" data-act="0" value="${esc(state.actions[0])}" placeholder="誰が・何を・いつまでに"></div>
+      <div class="field"><label for="a1">センターピン施策 2 <span class="sub">（任意）</span></label><input type="text" id="a1" data-act="1" value="${esc(state.actions[1])}" placeholder="誰が・何を・いつまでに"></div>
+      <div class="note"><b>止める・保留する仕事：</b>${outs.length?esc(outs.join('、')):'STEP 4で未選択です。図に入らない仕事がないか、もう一度見直してください。'}</div>
+      <div class="field"><label for="sheet">診断シート <span class="sub">（コピーして報告書やメモに貼り付けられます）</span></label><textarea id="sheet" class="sheet" readonly></textarea>
+      <div class="copyrow"><button type="button" class="btn" data-copy="sheet">診断シートをコピー</button><span class="msg" id="copyMsg-sheet"></span></div></div>
+      <div class="ai">
+        <div class="ai-head"><span class="label">ChatGPTなどで、詳しい行動計画をもらう</span></div>
+        <p class="msg">下の文章をコピーして、ChatGPT・Gemini・Claudeなどの無料のAIにそのまま貼り付けて送信してください。この診断結果をもとに、施策・4週間の行動計画・そのまま使える案内文まで作ってくれます。</p>
+        <textarea id="chatPrompt" class="sheet" style="white-space:pre-wrap" readonly aria-label="AIに貼り付けるプロンプト"></textarea>
+        <div class="copyrow"><button type="button" class="btn btn-primary" data-copy="prompt">プロンプトをコピー</button><span class="msg" id="copyMsg-prompt"></span></div>
+      </div>
+    </div>`;
+  }
+];
+
+function sheetText(){
+  const a = analyze(), u = state.unit, s = state.steps;
+  const L = [];
+  L.push(`【6ブロックダイアグラム】${state.bizName||''}`);
+  L.push(`1 現状　　：${state.current}`);
+  s.forEach((x,i)=> L.push(`${i+2} STEP${i+1}　：${x.name}　${fmt(a.vals[i])}${u}${i>0?`（通過率 ${pct(a.rates[i])}）`:''}${a.bn===i?'　← ボトルネック':''}`));
+  L.push(`6 ゴール　：${state.goal}`);
+  L.push(`　 理由　　：${state.why}`);
+  L.push('');
+  if(a.bn!=null){
+    L.push(`■ボトルネック：STEP${a.bn+1} ${s[a.bn].name}（${s[a.bn-1].name}からの通過率 ${pct(a.rates[a.bn])}）`);
+    if(a.impact[a.bn]!=null) L.push(`　通過率を10ポイント上げると、${s[3].name}は ${fmt(a.vals[3])}${u} → ${fmt(Math.round(a.impact[a.bn]))}${u}`);
+  }
+  const acts = state.actions.map(x=>x.trim()).filter(Boolean);
+  L.push('■センターピン施策');
+  if(acts.length) acts.forEach((x,i)=>L.push(`　${i+1}. ${x}`)); else L.push('　（未記入）');
+  const outs = [...state.scopeOut, ...state.scopeCustom.split(/\n/).map(x=>x.trim()).filter(Boolean)];
+  L.push('■止める・保留する仕事（スコープ外）');
+  if(outs.length) outs.forEach(x=>L.push(`　・${x}`)); else L.push('　（未選択）');
+  return L.join('\n');
+}
+
+/* ---------- prompt for other AIs ---------- */
+function buildContext(){
+  const a = analyze(), s = state.steps, u = state.unit || '';
+  const i = a.bn;
+  const outs = [...state.scopeOut, ...state.scopeCustom.split(/\n/).map(x=>x.trim()).filter(Boolean)];
+  const L = [];
+  L.push('# 事業');
+  L.push(`- 事業名：${state.bizName||'（未記入）'}`);
+  L.push(`- 業種・業態：${state.ctxIndustry||'（未記入）'}`);
+  L.push(`- 客単価・案件単価：${state.ctxPrice||'（未記入）'}`);
+  L.push(`- 使える人員・予算・時間：${state.ctxResources||'（未記入）'}`);
+  L.push(`- すでに試したこと：${state.ctxTried||'（未記入）'}`);
+  L.push('','# 6ブロックダイアグラム');
+  L.push(`- 現状：${state.current}`);
+  s.forEach((x,k)=> L.push(`- STEP${k+1} ${x.name}（数えるもの：${x.hint||'—'}）：${fmt(a.vals[k])}${u}${k>0?`／STEP${k}からの通過率 ${pct(a.rates[k])}${a.targets[k]!=null?`（目標 ${(a.targets[k]*100).toFixed(1)}%）`:''}`:''}`));
+  L.push(`- ゴール：${state.goal}`);
+  L.push(`- ゴールが必要な理由：${state.why}`);
+  L.push('','# ボトルネック判定');
+  L.push(`- ボトルネック：STEP${i} ${s[i-1].name} → STEP${i+1} ${s[i].name}（通過率 ${pct(a.rates[i])}）`);
+  L.push(`- 判定方法：${a.useTarget?'目標通過率に対する達成度が最も低い区間':'通過率が最も低い区間'}`);
+  if(a.impact[i]!=null) L.push(`- この区間の通過率を10ポイント上げると、${s[3].name}は ${fmt(a.vals[3])}${u} → ${fmt(Math.round(a.impact[i]))}${u}`);
+  L.push('','# スコープ外として止める予定の仕事');
+  L.push(outs.length ? outs.map(x=>'- '+x).join('\n') : '- （未選択）');
+  return L.join('\n');
+}
+
+function buildChatPrompt(){
+  const a = analyze(), i = a.bn, s = state.steps;
+  if(i==null) return 'STEP 5で4つの数値を入れると、ここにプロンプトが表示されます。';
+  const acts = state.actions.map(x=>x.trim()).filter(Boolean);
+  const L = [];
+  L.push('あなたは、小さな会社やお店の利益改善を数多く支援してきた経営コンサルタント（中小企業診断士）です。');
+  L.push('私は事業の経営者です。下の「6ブロックダイアグラム」で、事業の流れ（現状 → 4つのステップ → ゴール）と各ステップの月間の実績を数字で整理し、いちばん流れが詰まっている区間（ボトルネック）を特定しました。');
+  L.push('この診断結果をもとに、明日から動ける、具体的で実用的な行動計画を作ってください。');
+  L.push('', buildContext());
+  L.push('','# 私が考えている施策');
+  L.push(acts.length ? acts.map(x=>'- '+x).join('\n') : '- （まだ決めていません）');
+  L.push('','# 出力してほしい内容（この順に、見出しをつけて）');
+  L.push('1. 結論：ボトルネックをどう直すか（3行以内）');
+  L.push(`2. 施策3つ：ボトルネック区間（STEP${i}「${s[i-1].name}」→ STEP${i+1}「${s[i].name}」）の通過率を上げるものだけ。施策ごとに「やること（誰が・何を・いつ・どのくらいの頻度で）」「かかる費用の目安」「効果を測る指標と1か月後の目標値」を書く。私が考えている施策があれば、良い点と改善点も一言添える。`);
+  L.push('3. 4週間の行動計画：1週目〜4週目それぞれ、やることをチェックリストで');
+  L.push('4. そのまま使える文面：施策に必要なお客様への案内文、声かけのトーク、メッセージなどを1〜2本、すぐ使える完成形で');
+  L.push('5. やめる・保留する仕事：理由つきで');
+  L.push('6. 計画をもっと正確にするために、私に確認したいこと（3つまで）');
+  L.push('','# 守ってほしいこと');
+  L.push(`- ボトルネックが集客の段階でない限り、広告・SNS・値下げなどで新規客を増やす施策は提案しない。いまの通過率 ${pct(a.rates[i])} を上げることに集中する。`);
+  L.push('- 私が使える人員・予算・時間の範囲で、無理なく実行できる内容にする。');
+  L.push('- すでに試したことと同じ施策は出さない。効かなかった理由が推測できるなら、それを踏まえた改良案にする。');
+  L.push('- 統計や他社事例の数字を作らない。根拠は上の数字から説明する。');
+  L.push('- 専門用語は使わず、経営者がそのまま読んで動ける言葉で書く。');
+  return L.join('\n');
+}
+
+function fillAction(text){
+  const slot = state.actions[0].trim()==='' ? 0 : 1;
+  state.actions[slot] = text;
+  const inp = $('#a'+slot); if(inp) inp.value = text;
+  edited();
+}
+
+function renderPanel(){
+  const i = state.step, err = stepError(i);
+  const isLast = i===STEPS.length-1;
+  $('#panel').innerHTML = VIEWS[i]() +
+    `<div class="nav"><button type="button" class="btn" id="btnBack" ${i===0?'hidden':''}>戻る</button>
+      <p class="msg ${err?'':'ok'}" id="navMsg">${err?esc('次へ進むには：'+err):''}</p>
+      ${isLast?'':`<button type="button" class="btn btn-primary" id="btnNext" ${err?'disabled':''}>${i===4?'診断する':'次へ'}</button>`}</div>`;
+  refreshInline();
+}
+
+function refreshInline(){
+  const i = state.step, err = stepError(i);
+  const nm = $('#navMsg'); if(nm){ nm.textContent = err ? '次へ進むには：'+err : ''; }
+  const nx = $('#btnNext'); if(nx) nx.disabled = !!err;
+  if(i===1){ const w=$('#curWarn'); if(w){ const bad = state.current.trim() && !hasNum(state.current); w.textContent = bad ? '数字があると、ゴールまでの距離が測れます（例：単月赤字200万円、月商300万円）。' : ''; w.className = 'msg'+(bad?' warn':''); } }
+  if(i===4){ const a=analyze(); for(let k=1;k<4;k++){ const el=$('#live'+k); if(el) el.textContent='通過率 '+pct(a.rates[k]); } }
+  if(i===6){ const sh=$('#sheet'); if(sh) sh.value = sheetText(); const cp=$('#chatPrompt'); if(cp) cp.value = buildChatPrompt(); }
+}
+
+function renderBanner(){ $('#banner').hidden = !state.isSample; }
+function renderAll(){ renderBanner(); renderStepper(); renderDiagram(); renderPanel(); }
+
+function edited(){
+  if(state.isSample){ state.isSample=false; renderBanner(); }
+  save(); renderDiagram(); renderStepper(); refreshInline();
+}
+function go(i){ state.step = Math.max(0,Math.min(STEPS.length-1,i)); save(); renderStepper(); renderPanel(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+/* ---------- events ---------- */
+const panel = $('#panel');
+panel.addEventListener('input', e=>{
+  const t = e.target, d = t.dataset;
+  if(d.bind!==undefined) state[d.bind] = t.value;
+  else if(d.sf){ const [k,f]=d.sf.split(':'); state.steps[+k][f]=t.value; }
+  else if(d.act!==undefined) state.actions[+d.act] = t.value;
+  else return;
+  edited();
+});
+panel.addEventListener('change', e=>{
+  const t = e.target;
+  if(t.dataset.scope!==undefined){
+    const v = t.dataset.scope;
+    state.scopeOut = t.checked ? [...new Set([...state.scopeOut, v])] : state.scopeOut.filter(x=>x!==v);
+    edited();
+  }
+});
+panel.addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  if(b.id==='btnNext') return go(state.step+1);
+  if(b.id==='btnBack') return go(state.step-1);
+  if(b.dataset.tpl){
+    const k=b.dataset.tpl, t=TEMPLATES[k];
+    state.template=k;
+    if(t.steps){ state.unit=t.unit; t.steps.forEach((s,i)=>{ state.steps[i].name=s.name; state.steps[i].hint=s.hint; }); }
+    edited(); renderPanel(); return;
+  }
+  if(b.dataset.sug){ fillAction(b.dataset.sug); return; }
+  if(b.dataset.copy){
+    const isP = b.dataset.copy==='prompt';
+    const txt = isP ? buildChatPrompt() : sheetText(), msg = $('#copyMsg-'+b.dataset.copy), sh = isP ? $('#chatPrompt') : $('#sheet');
+    const fallback = ()=>{ sh.focus(); sh.select(); msg.textContent='選択しました。Ctrl+C（⌘+C）でコピーしてください。'; };
+    try{
+      navigator.clipboard.writeText(txt).then(()=>{ msg.textContent='コピーしました。'; }, fallback);
+    }catch(err){ fallback(); }
+  }
+});
+$('#stepper').addEventListener('click', e=>{ const b=e.target.closest('button[data-go]'); if(b && !b.disabled) go(+b.dataset.go); });
+
+function arm(btn, label, action){
+  if(btn.classList.contains('armed')){ clearTimeout(btn._t); btn.classList.remove('armed'); btn.textContent=label; action(); return; }
+  btn.classList.add('armed'); btn.textContent='もう一度押すと入力を消去';
+  btn._t = setTimeout(()=>{ btn.classList.remove('armed'); btn.textContent=label; }, 3500);
+}
+function hasUserData(){ return !state.isSample && (state.goal||state.current||state.steps.some(s=>s.value)); }
+$('#btnSample').addEventListener('click', e=>{
+  const doIt=()=>{ state=sampleState(); save(); renderAll(); };
+  hasUserData() ? arm(e.currentTarget,'サンプルを表示',doIt) : doIt();
+});
+$('#btnReset').addEventListener('click', e=>{
+  const doIt=()=>{ state=blankState(); save(); renderAll(); };
+  hasUserData() ? arm(e.currentTarget,'白紙から始める',doIt) : doIt();
+});
+
+renderAll();
+})();
+</script>
+
+<script>
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});
+}
+</script>
+</body>
+</html>
